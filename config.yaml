@@ -1,0 +1,45 @@
+# VRChat Bot Configuration File
+bot:
+  name: "VRChatBot"
+  prefix: "!"
+  status: "Hello! I'm a VRChat assistant bot. Type !help for commands."
+  
+api:
+  max_requests_per_minute: 1
+  timeout: 30
+  retry_attempts: 3
+  
+features:
+  auto_reconnect: true
+  response_delay: 2.0
+  log_messages: true
+  
+commands:
+  # Built-in commands that will always be available
+  - help
+  - info
+  - status
+  - ping
+  - time
+  
+# Response patterns for automatic replies
+responses:
+  greetings:
+    - "Hello! How can I help you today?"
+    - "Hi there! What can I do for you?"
+    - "Greetings! Feel free to ask me anything."
+  
+  farewells:
+    - "Goodbye! Have a great time in VRChat!"
+    - "See you later! Enjoy your adventures!"
+    - "Bye! Take care!"
+  
+  unknown_commands:
+    - "I don't recognize that command. Type !help for available commands."
+    - "Sorry, I don't understand. Try !help to see what I can do."
+    - "Unknown command. Use !help for a list of commands."
+
+logging:
+  level: "INFO"
+  file: "bot.log"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

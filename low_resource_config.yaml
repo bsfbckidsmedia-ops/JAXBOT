@@ -1,0 +1,62 @@
+# Low-Resource Configuration for HP Envy 15-dy1xxx
+# Optimized for 11.7GB RAM, 3.62GB free storage
+
+bot:
+  name: "VRChatBot"
+  prefix: "!"
+  status: "Lightweight VRChat assistant. Type !help for commands."
+  
+# Resource limits for older hardware
+resources:
+  max_memory_mb: 256      # Maximum memory usage
+  max_storage_mb: 100     # Maximum storage usage
+  max_cpu_percent: 25.0   # Maximum CPU usage
+  cleanup_threshold_mb: 50 # When to start cleanup
+  
+api:
+  max_requests_per_minute: 1  # VRChat API limit
+  timeout: 30
+  retry_attempts: 2  # Reduced retries to save resources
+  
+features:
+  auto_reconnect: true
+  response_delay: 2.0
+  log_messages: false  # Disabled to save storage
+  
+# Minimal command set for low resource usage
+commands:
+  - help
+  - info
+  - ping
+  
+# Simplified responses
+responses:
+  greetings:
+    - "Hello!"
+    - "Hi there!"
+  
+  unknown_commands:
+    - "Unknown command. Use !help"
+
+# Lightweight logging
+logging:
+  level: "WARNING"  # Reduced log level
+  file: "bot.log"
+  max_size_mb: 3
+  max_files: 2
+  format: "%(asctime)s - %(levelname)s - %(message)s"
+
+# Resource monitoring settings
+monitoring:
+  check_interval_minutes: 5    # How often to check resources
+  emergency_storage_mb: 30     # Emergency shutdown threshold
+  emergency_memory_mb: 300     # Emergency shutdown threshold
+  auto_cleanup: true
+  log_rotation: true
+
+# Performance optimizations
+performance:
+  gc_frequency: 20            # Garbage collection every N cycles
+  cache_cleanup: true
+  module_unloading: true      # Unload unused modules
+  connection_pooling: false   # Disable to save memory
