@@ -23,7 +23,6 @@ from vrchatapi.models.two_factor_email_code import TwoFactorEmailCode
 import yaml
 from dotenv import load_dotenv
 from resource_monitor import ResourceMonitor, ResourceLimits, LightweightLogger
-from aiavatarkit import TextToSpeech
 
 # Load environment variables from nano.env
 load_dotenv('nano.env')
@@ -249,15 +248,6 @@ I can respond to commands and chat with users in VRChat."""
         import random
         responses = self.responses.get(category, ["I'm not sure how to respond to that."])
         return random.choice(responses)
-        
-    async def tts(self, text: str):
-        """Synthesize speech using aiavatarkit TextToSpeech."""
-        try:
-            tts = TextToSpeech()
-            tts.synthesize(text, 'output.wav')
-            self.logger.info(f"TTS generated for: {text}")
-        except Exception as e:
-            self.logger.error(f"TTS failed: {e}")
         
     async def monitor_friends(self):
         """Monitor friend activities and respond to messages with resource management."""

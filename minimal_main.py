@@ -18,8 +18,6 @@ from vrchatapi.exceptions import UnauthorizedException
 from vrchatapi.models.two_factor_auth_code import TwoFactorAuthCode
 from vrchatapi.models.two_factor_email_code import TwoFactorEmailCode
 
-from aiavatarkit import TextToSpeech
-
 from dotenv import load_dotenv
 
 # Load environment variables from nano.env
@@ -177,15 +175,6 @@ class MinimalVRChatBot:
             return "Pong!"
         else:
             return "Unknown command. Use !help"
-    
-    async def tts(self, text: str):
-        """Synthesize speech using aiavatarkit TextToSpeech."""
-        try:
-            tts = TextToSpeech()
-            tts.synthesize(text, 'output.wav')
-            self.logger.info(f"TTS generated for: {text}")
-        except Exception as e:
-            self.logger.error(f"TTS failed: {e}")
     
     async def minimal_monitor(self):
         """Minimal friend monitoring."""
