@@ -23,7 +23,8 @@ from vrchatapi.models.two_factor_email_code import TwoFactorEmailCode
 import yaml
 from dotenv import load_dotenv
 from resource_monitor import ResourceMonitor, ResourceLimits, LightweightLogger
-from aiavatarkit import TextToSpeech
+from chatbox import ChatBox
+from tts import TTS
 
 # Load environment variables from nano.env
 load_dotenv('nano.env')
@@ -64,6 +65,10 @@ class VRChatBot:
         )
         self.resource_monitor = ResourceMonitor(resource_limits)
         self.logger = self._setup_lightweight_logging()
+        
+        # ChatBox and TTS
+        self.chatbox = ChatBox()
+        self.tts = TTS()
         
         # Load responses from config
         self.responses = self._load_responses()
@@ -185,40 +190,63 @@ class VRChatBot:
             self.logger.error(f"Failed to update status: {e}")
             
     def process_message(self, message: str, sender: str) -> Optional[str]:
-        """Process incoming messages and generate responses."""
+        """Process incoming messages and generate responses.
+        
+        Responses are also sent to the VRChat ChatBox.
+        """
         message = message.strip()
         
         # Check if message is a command
         if message.startswith(self.config.prefix):
-            return self.handle_command(message[len(self.config.prefix):], sender)
+            response = self.handle_command(message[len(self.config.prefix):], sender)
+        else:
+            # Check for greetings
+            lower_message = message.lower()
+            greetings = ['hello', 'hi', 'hey', 'greetings']
+            farewells = ['goodbye', 'bye', 'see you', 'farewell']
             
-        # Check for greetings
-        lower_message = message.lower()
-        greetings = ['hello', 'hi', 'hey', 'greetings']
-        if any(greeting in lower_message for greeting in greetings):
-            return self._get_random_response('greetings')
-            
-        # Check for farewells
-        farewells = ['goodbye', 'bye', 'see you', 'farewell']
-        if any(farewell in lower_message for farewell in farewells):
-            return self._get_random_response('farewells')
-            
-        return None
+            if any(greeting in lower_message for greeting in greetings):
+                response = self._get_random_response('greetings')
+            elif any(farewell in lower_message for farewell in farewells):
+                response = self._get_random_response('farewells')
+            else:
+                response = None
+        
+        # Send response to ChatBox
+        if response:
+            self.chatbox.send(response)
+        
+        return response
         
     def handle_command(self, command: str, sender: str) -> str:
         """Handle bot commands."""
-        command = command.lower().strip()
+        parts = command.lower().strip().split()
+        cmd = parts[0] if parts else ''
+        args = parts[1:] if len(parts) > 1 else []
         
-        if command == 'help':
+        if cmd == 'help':
             return self._help_command()
-        elif command == 'info':
+        elif cmd == 'info':
             return self._info_command()
-        elif command == 'status':
+        elif cmd == 'status':
             return self._status_command()
-        elif command == 'ping':
-            return "Pong! 🏓"
-        elif command == 'time':
+        elif cmd == 'ping':
+            return "Pong!"
+        elif cmd == 'time':
             return f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        elif cmd == 'say':
+            text = ' '.join(args) if args else 'Hello!'
+            self.chatbox.send(text)
+            self.tts.speak(text)
+            return f"Said: {text}"
+        elif cmd == 'tts':
+            text = ' '.join(args) if args else 'Hello!'
+            self.tts.speak(text)
+            return f"TTS: {text}"
+        elif cmd == 'chatbox':
+            text = ' '.join(args) if args else self.config.status
+            self.chatbox.send(text)
+            return f"ChatBox: {text}"
         else:
             return self._get_random_response('unknown_commands')
             
@@ -230,6 +258,9 @@ class VRChatBot:
 {self.config.prefix}status - Show current status
 {self.config.prefix}ping - Test bot responsiveness
 {self.config.prefix}time - Show current time
+{self.config.prefix}say <text> - Send text to ChatBox + TTS
+{self.config.prefix}tts <text> - Text-to-speech only
+{self.config.prefix}chatbox <text> - Send text to ChatBox only
 
 You can also greet me or say goodbye!"""
         
@@ -249,15 +280,6 @@ I can respond to commands and chat with users in VRChat."""
         import random
         responses = self.responses.get(category, ["I'm not sure how to respond to that."])
         return random.choice(responses)
-        
-    async def tts(self, text: str):
-        """Synthesize speech using aiavatarkit TextToSpeech."""
-        try:
-            tts = TextToSpeech()
-            tts.synthesize(text, 'output.wav')
-            self.logger.info(f"TTS generated for: {text}")
-        except Exception as e:
-            self.logger.error(f"TTS failed: {e}")
         
     async def monitor_friends(self):
         """Monitor friend activities and respond to messages with resource management."""
@@ -340,12 +362,22 @@ I can respond to commands and chat with users in VRChat."""
         
         self.running = True
         
+        # Start ChatBox standby scrolling messages
+        standby_messages = [
+            f"{self.config.bot_name} | Online",
+            self.config.status,
+            f"Type {self.config.prefix}help for commands",
+        ]
+        await self.chatbox.start_scrolling(standby_messages, interval=5.0)
+        
         # Start monitoring
         try:
             await self.monitor_friends()
         except KeyboardInterrupt:
             self.logger.info("Received interrupt signal...")
         finally:
+            await self.chatbox.stop_scrolling()
+            self.chatbox.clear()
             self.running = False
             self.logger.info("Bot stopped.")
 
