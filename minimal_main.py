@@ -19,6 +19,8 @@ from vrchatapi.models.two_factor_auth_code import TwoFactorAuthCode
 from vrchatapi.models.two_factor_email_code import TwoFactorEmailCode
 
 from dotenv import load_dotenv
+from chatbox import ChatBox
+from tts import TTS
 
 # Load environment variables from nano.env
 load_dotenv('nano.env')
@@ -43,6 +45,10 @@ class MinimalVRChatBot:
         self.running = False
         self.request_count = 0
         self.last_request_time = None
+        
+        # ChatBox and TTS
+        self.chatbox = ChatBox()
+        self.tts = TTS()
         
         # Simple logging
         logging.basicConfig(
@@ -161,20 +167,46 @@ class MinimalVRChatBot:
             return False
     
     def process_command(self, message, sender):
-        """Process simple commands."""
+        """Process simple commands. Responses are sent to ChatBox."""
         if not message.startswith(self.prefix):
             return None
             
-        command = message[len(self.prefix):].lower().strip()
+        parts = message[len(self.prefix):].lower().strip().split()
+        cmd = parts[0] if parts else ''
+        args = parts[1:] if len(parts) > 1 else []
         
-        if command == 'help':
-            return f"{self.bot_name} Commands:\n{self.prefix}help - Show help\n{self.prefix}info - Bot info\n{self.prefix}ping - Test"
-        elif command == 'info':
-            return f"{self.bot_name} - Lightweight VRChat Bot\nUser: {self.current_user.display_name if self.current_user else 'Unknown'}"
-        elif command == 'ping':
-            return "Pong!"
+        if cmd == 'help':
+            response = (
+                f"{self.bot_name} Commands:\n"
+                f"{self.prefix}help - Show help\n"
+                f"{self.prefix}info - Bot info\n"
+                f"{self.prefix}ping - Test\n"
+                f"{self.prefix}say <text> - ChatBox + TTS\n"
+                f"{self.prefix}tts <text> - TTS only\n"
+                f"{self.prefix}chatbox <text> - ChatBox only"
+            )
+        elif cmd == 'info':
+            response = f"{self.bot_name} - Lightweight VRChat Bot\nUser: {self.current_user.display_name if self.current_user else 'Unknown'}"
+        elif cmd == 'ping':
+            response = "Pong!"
+        elif cmd == 'say':
+            text = ' '.join(args) if args else 'Hello!'
+            self.chatbox.send(text)
+            self.tts.speak(text)
+            response = f"Said: {text}"
+        elif cmd == 'tts':
+            text = ' '.join(args) if args else 'Hello!'
+            self.tts.speak(text)
+            response = f"TTS: {text}"
+        elif cmd == 'chatbox':
+            text = ' '.join(args) if args else 'Hello!'
+            self.chatbox.send(text)
+            response = f"ChatBox: {text}"
         else:
-            return "Unknown command. Use !help"
+            response = "Unknown command. Use !help"
+        
+        self.chatbox.send(response)
+        return response
     
     async def minimal_monitor(self):
         """Minimal friend monitoring."""
@@ -235,11 +267,20 @@ class MinimalVRChatBot:
         
         self.running = True
         
+        # Start ChatBox standby scrolling messages
+        standby_messages = [
+            f"{self.bot_name} | Online",
+            f"Type {self.prefix}help for commands",
+        ]
+        await self.chatbox.start_scrolling(standby_messages, interval=5.0)
+        
         try:
             await self.minimal_monitor()
         except KeyboardInterrupt:
             self.logger.info("Interrupt received")
         finally:
+            await self.chatbox.stop_scrolling()
+            self.chatbox.clear()
             self.running = False
             self.logger.info("Bot stopped")
 

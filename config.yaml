@@ -13,6 +13,17 @@ features:
   auto_reconnect: true
   response_delay: 2.0
   log_messages: true
+  chatbox_enabled: true
+  tts_enabled: true
+
+chatbox:
+  osc_host: "127.0.0.1"
+  osc_port: 9000
+  scroll_interval: 5.0
+
+tts:
+  rate: 150
+  volume: 1.0
   
 commands:
   # Built-in commands that will always be available
@@ -21,6 +32,9 @@ commands:
   - status
   - ping
   - time
+  - say
+  - tts
+  - chatbox
   
 # Response patterns for automatic replies
 responses:
