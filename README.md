@@ -1,4 +1,4 @@
-# VRChat Standalone Bot
+# VRBot
 
 A fully autonomous VRChat chatbot that can run without human intervention. This bot uses the VRChat API to interact with users and respond to commands.
 
