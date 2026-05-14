@@ -1,11 +1,11 @@
 @echo off
 cd /d %~dp0
-if not exist "dist\main.exe" (
-    echo Error: dist\main.exe not found.
-    echo Build may have failed or the executable is missing.
+if not exist "dist\JaxBot.exe" (
+    echo Error: dist\JaxBot.exe not found.
+    echo Run "python build_exe.py" or "python build_jaxbot.py" first.
     pause
     exit /b 1
 )
-echo Starting VRChat main bot...
-"dist\main.exe"
+echo Starting JaxBot Console...
+"dist\JaxBot.exe"
 pause
