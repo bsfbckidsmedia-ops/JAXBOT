@@ -23,8 +23,9 @@ from vrchatapi.models.two_factor_email_code import TwoFactorEmailCode
 import yaml
 from dotenv import load_dotenv
 from resource_monitor import ResourceMonitor, ResourceLimits, LightweightLogger
-from chatbox import ChatBox
-from tts import TTS
+from aiavatarkit import TextToSpeech
+from event_guardrails import EventGuardrails
+from genai_mode import GenAIMode
 
 # Load environment variables from nano.env
 load_dotenv('nano.env')
@@ -66,12 +67,15 @@ class VRChatBot:
         self.resource_monitor = ResourceMonitor(resource_limits)
         self.logger = self._setup_lightweight_logging()
         
-        # ChatBox and TTS
-        self.chatbox = ChatBox()
-        self.tts = TTS()
-        
         # Load responses from config
         self.responses = self._load_responses()
+        
+        # Initialize event guardrails
+        self.guardrails = EventGuardrails(self.logger)
+        
+        # Initialize GenAI mode
+        genai_config = self._load_genai_config()
+        self.genai = GenAIMode(genai_config, self.logger)
         
     def _setup_lightweight_logging(self) -> logging.Logger:
         """Setup lightweight logging for resource-constrained environments."""
@@ -94,6 +98,22 @@ class VRChatBot:
         except Exception as e:
             self.logger.warning(f"Could not load responses from config: {e}")
             return {}
+    
+    def _load_genai_config(self) -> Dict:
+        """Load GenAI configuration from config file."""
+        try:
+            with open('config.yaml', 'r') as f:
+                config = yaml.safe_load(f)
+                genai_config = config.get('genai', {})
+                
+                # Override with environment variables if present
+                genai_config['api_key'] = os.getenv('GENAI_API_KEY', genai_config.get('api_key', ''))
+                genai_config['base_url'] = os.getenv('GENAI_BASE_URL', genai_config.get('base_url', ''))
+                
+                return genai_config
+        except Exception as e:
+            self.logger.warning(f"Could not load GenAI config: {e}")
+            return {'enabled': False}
             
     async def _rate_limit(self):
         """Implement rate limiting to respect VRChat API limits."""
@@ -190,63 +210,72 @@ class VRChatBot:
             self.logger.error(f"Failed to update status: {e}")
             
     def process_message(self, message: str, sender: str) -> Optional[str]:
-        """Process incoming messages and generate responses.
-        
-        Responses are also sent to the VRChat ChatBox.
-        """
+        """Process incoming messages and generate responses."""
         message = message.strip()
+        
+        # Check for rule violations first
+        violation = self.guardrails.check_message(message, sender)
+        if violation:
+            rule_name, response = violation
+            self.logger.warning(f"Rule '{rule_name}' violated by {sender}")
+            return response
         
         # Check if message is a command
         if message.startswith(self.config.prefix):
-            response = self.handle_command(message[len(self.config.prefix):], sender)
-        else:
-            # Check for greetings
-            lower_message = message.lower()
-            greetings = ['hello', 'hi', 'hey', 'greetings']
-            farewells = ['goodbye', 'bye', 'see you', 'farewell']
+            return self.handle_command(message[len(self.config.prefix):], sender)
             
-            if any(greeting in lower_message for greeting in greetings):
-                response = self._get_random_response('greetings')
-            elif any(farewell in lower_message for farewell in farewells):
-                response = self._get_random_response('farewells')
-            else:
-                response = None
+        # Check for greetings
+        lower_message = message.lower()
+        greetings = ['hello', 'hi', 'hey', 'greetings']
+        if any(greeting in lower_message for greeting in greetings):
+            return self._get_random_response('greetings')
+            
+        # Check for farewells
+        farewells = ['goodbye', 'bye', 'see you', 'farewell']
+        if any(farewell in lower_message for farewell in farewells):
+            return self._get_random_response('farewells')
         
-        # Send response to ChatBox
-        if response:
-            self.chatbox.send(response)
-        
-        return response
+        # Try GenAI mode if enabled
+        if self.genai.is_enabled():
+            try:
+                # Run GenAI generation asynchronously
+                loop = asyncio.get_event_loop()
+                ai_response = loop.run_until_complete(
+                    self.genai.generate_response(message, sender)
+                )
+                if ai_response:
+                    return ai_response
+            except Exception as e:
+                self.logger.error(f"GenAI generation failed: {e}")
+            
+        return None
         
     def handle_command(self, command: str, sender: str) -> str:
         """Handle bot commands."""
-        parts = command.lower().strip().split()
-        cmd = parts[0] if parts else ''
-        args = parts[1:] if len(parts) > 1 else []
+        command = command.lower().strip()
         
-        if cmd == 'help':
+        if command == 'help':
             return self._help_command()
-        elif cmd == 'info':
+        elif command == 'info':
             return self._info_command()
-        elif cmd == 'status':
+        elif command == 'status':
             return self._status_command()
-        elif cmd == 'ping':
-            return "Pong!"
-        elif cmd == 'time':
+        elif command == 'ping':
+            return "Pong! 🏓"
+        elif command == 'time':
             return f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        elif cmd == 'say':
-            text = ' '.join(args) if args else 'Hello!'
-            self.chatbox.send(text)
-            self.tts.speak(text)
-            return f"Said: {text}"
-        elif cmd == 'tts':
-            text = ' '.join(args) if args else 'Hello!'
-            self.tts.speak(text)
-            return f"TTS: {text}"
-        elif cmd == 'chatbox':
-            text = ' '.join(args) if args else self.config.status
-            self.chatbox.send(text)
-            return f"ChatBox: {text}"
+        elif command == 'rules':
+            return self._rules_command()
+        elif command.startswith('violations'):
+            return self._violations_command(command, sender)
+        elif command == 'genai':
+            return self._genai_command()
+        elif command == 'genai on':
+            self.genai.toggle(True)
+            return "🤖 GenAI mode enabled"
+        elif command == 'genai off':
+            self.genai.toggle(False)
+            return "🤖 GenAI mode disabled"
         else:
             return self._get_random_response('unknown_commands')
             
@@ -258,9 +287,11 @@ class VRChatBot:
 {self.config.prefix}status - Show current status
 {self.config.prefix}ping - Test bot responsiveness
 {self.config.prefix}time - Show current time
-{self.config.prefix}say <text> - Send text to ChatBox + TTS
-{self.config.prefix}tts <text> - Text-to-speech only
-{self.config.prefix}chatbox <text> - Send text to ChatBox only
+{self.config.prefix}rules - Show event rules
+{self.config.prefix}violations [user] - Check violation count for a user
+{self.config.prefix}genai - Show GenAI mode status
+{self.config.prefix}genai on - Enable GenAI mode
+{self.config.prefix}genai off - Disable GenAI mode
 
 You can also greet me or say goodbye!"""
         
@@ -275,11 +306,75 @@ I can respond to commands and chat with users in VRChat."""
         """Return current status."""
         return f"Bot Status: Online | User: {self.current_user.display_name if self.current_user else 'Unknown'}"
         
+    def _rules_command(self) -> str:
+        """Return event rules."""
+        return """📋 Event Rules:
+1. No Poaching or taking over the event
+2. No advertising your own community/discord
+3. Keep it SFW (no nude/inappropriate avatars)
+4. Keep music to a minimum, SFW, and not vulgar/explosive
+5. No fighting or being very negative to other members
+
+Violations may result in removal, timeout, kick, or ban."""
+        
+    def _violations_command(self, command: str, sender: str) -> str:
+        """Handle violations command."""
+        parts = command.split()
+        
+        if len(parts) == 1:
+            # Check own violations
+            count = self.guardrails.get_violation_count(sender)
+            summary = self.guardrails.get_violation_summary(sender)
+            
+            if count == 0:
+                return f"✅ You have no violations. Keep following the rules!"
+            else:
+                response = f"⚠️ You have {count} violation(s):\n"
+                for rule, rule_count in summary['rule_counts'].items():
+                    response += f"  - {rule}: {rule_count}\n"
+                return response.strip()
+        else:
+            # Check another user's violations (could be admin-only in future)
+            target_user = parts[1]
+            count = self.guardrails.get_violation_count(target_user)
+            summary = self.guardrails.get_violation_summary(target_user)
+            
+            if count == 0:
+                return f"✅ {target_user} has no violations."
+            else:
+                response = f"⚠️ {target_user} has {count} violation(s):\n"
+                for rule, rule_count in summary['rule_counts'].items():
+                    response += f"  - {rule}: {rule_count}\n"
+                return response.strip()
+    
+    def _genai_command(self) -> str:
+        """Show GenAI mode status."""
+        info = self.genai.get_provider_info()
+        status = "enabled" if info['enabled'] else "disabled"
+        
+        if info['enabled']:
+            return f"""🤖 GenAI Mode: {status}
+Provider: {info['provider']}
+Model: {info['model']}
+Max Tokens: {info['max_tokens']}
+Temperature: {info['temperature']}"""
+        else:
+            return f"🤖 GenAI Mode: {status} (Use !genai on to enable)"
+        
     def _get_random_response(self, category: str) -> str:
         """Get a random response from a category."""
         import random
         responses = self.responses.get(category, ["I'm not sure how to respond to that."])
         return random.choice(responses)
+        
+    async def tts(self, text: str):
+        """Synthesize speech using aiavatarkit TextToSpeech."""
+        try:
+            tts = TextToSpeech()
+            tts.synthesize(text, 'output.wav')
+            self.logger.info(f"TTS generated for: {text}")
+        except Exception as e:
+            self.logger.error(f"TTS failed: {e}")
         
     async def monitor_friends(self):
         """Monitor friend activities and respond to messages with resource management."""
@@ -362,22 +457,12 @@ I can respond to commands and chat with users in VRChat."""
         
         self.running = True
         
-        # Start ChatBox standby scrolling messages
-        standby_messages = [
-            f"{self.config.bot_name} | Online",
-            self.config.status,
-            f"Type {self.config.prefix}help for commands",
-        ]
-        await self.chatbox.start_scrolling(standby_messages, interval=5.0)
-        
         # Start monitoring
         try:
             await self.monitor_friends()
         except KeyboardInterrupt:
             self.logger.info("Received interrupt signal...")
         finally:
-            await self.chatbox.stop_scrolling()
-            self.chatbox.clear()
             self.running = False
             self.logger.info("Bot stopped.")
 
